@@ -221,6 +221,20 @@ body {
   overflow-y: auto;
 }
 
+/* Add white background for chat messages */
+.chat-messages.white-bg {
+  background-color: #ffffff;
+  background-image: none;
+}
+
+.white-bg .message-bubble.outgoing {
+  background-color: #dcf8c6;
+}
+
+.white-bg .message-bubble.incoming {
+  background-color: #f0f0f0;
+}
+
 .no-messages {
   display: flex;
   justify-content: center;
@@ -336,6 +350,12 @@ body {
   color: #075E54;
 }
 
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+}
+
 .stat-highlight {
   font-size: 1.2rem;
 }
@@ -346,6 +366,13 @@ body {
 
 .stat-value.highlight {
   color: #25D366;
+}
+
+.subsection-title {
+  font-size: 1.1rem;
+  font-weight: bold;
+  margin-bottom: 1rem;
+  color: #075E54;
 }
 
 .chart-container {
@@ -367,12 +394,6 @@ body {
 .pie-section {
   display: flex;
   flex-direction: column;
-}
-
-.subsection-title {
-  font-size: 1.1rem;
-  font-weight: bold;
-  margin-bottom: 1rem;
 }
 
 .pie-container {
@@ -417,7 +438,7 @@ body {
     max-width: 80%;
   }
   
-  .pie-chart-grid {
+  .pie-chart-grid, .stats-grid {
     grid-template-columns: 1fr;
   }
   
