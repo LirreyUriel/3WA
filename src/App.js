@@ -767,6 +767,7 @@ const WhatsAppAnalyzer = () => {
                 </div>
               </div>
             </div>
+            
             {/* Most Common Words */}
             <div className="stat-card">
               <h3 className="stat-title">Most Common Words</h3>
@@ -818,8 +819,6 @@ const WhatsAppAnalyzer = () => {
                 </ResponsiveContainer>
               </div>
             </div>
-          </div>
-        )}
         
         {!fileUploaded && (activeTab === 'chat' || activeTab === 'statistics') && (
           <div className="no-data">
