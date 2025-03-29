@@ -767,7 +767,7 @@ const WhatsAppAnalyzer = () => {
                 </div>
               </div>
             </div>
-{/* Most Common Words */}
+            {/* Most Common Words */}
             <div className="stat-card">
               <h3 className="stat-title">Most Common Words</h3>
               <div className="vertical-chart-container">
