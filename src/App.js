@@ -137,6 +137,26 @@ const WhatsAppAnalyzer = () => {
     return new Date(year, month, day, hours, minutes);
   };
 
+  // Generate ISO week number from a date
+  const getWeekNumber = (d) => {
+    const date = new Date(d);
+    date.setHours(0, 0, 0, 0);
+    // Thursday in current week decides the year
+    date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+    // January 4 is always in week 1
+    const week1 = new Date(date.getFullYear(), 0, 4);
+    // Adjust to Thursday in week 1 and count number of weeks from date to week1
+    return 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+  };
+
+  // Get week identifier (year + week number)
+  const getWeekIdentifier = (date) => {
+    const d = new Date(date);
+    const year = d.getFullYear();
+    const week = getWeekNumber(d);
+    return `${year}-W${week.toString().padStart(2, '0')}`;
+  };
+
   const calculateStats = (data) => {
     if (!data || data.length === 0) return;
     
@@ -205,9 +225,25 @@ const WhatsAppAnalyzer = () => {
       messagesByDate[row.date]++;
     });
     
+    // Message count by week
+    const messagesByWeek = {};
+    data.forEach(row => {
+      if (!row.datetime) return;
+      
+      const weekId = getWeekIdentifier(row.datetime);
+      if (!messagesByWeek[weekId]) {
+        messagesByWeek[weekId] = 0;
+      }
+      messagesByWeek[weekId]++;
+    });
+    
     // Find most active day
     const mostActiveDay = Object.entries(messagesByDate)
       .reduce((max, [date, count]) => count > max[1] ? [date, count] : max, ['', 0]);
+    
+    // Find most active week
+    const mostActiveWeek = Object.entries(messagesByWeek)
+      .reduce((max, [week, count]) => count > max[1] ? [week, count] : max, ['', 0]);
     
     // Timeline data (by month)
     const messagesByMonth = {};
@@ -239,6 +275,9 @@ const WhatsAppAnalyzer = () => {
       .sort((a, b) => a.sortDate - b.sortDate)
       .slice(-30); // Get only the last 30 days for readability
     
+    // Words to exclude from analysis
+    const excludedWords = ['המדיה', 'נכללה', 'מחקת', 'ההודעה', 'נערכה'];
+    
     // Calculate most common words
     const wordCounts = {};
     data.forEach(row => {
@@ -248,7 +287,7 @@ const WhatsAppAnalyzer = () => {
         .toLowerCase()
         .replace(/[^\p{L}\p{N}\s]/gu, '') // Remove non-alphanumeric characters but keep Unicode letters
         .split(/\s+/)
-        .filter(word => word.length > 2); // Filter out short words
+        .filter(word => word.length > 2 && !excludedWords.includes(word)); // Filter out short words and excluded words
       
       words.forEach(word => {
         if (!wordCounts[word]) {
@@ -269,6 +308,7 @@ const WhatsAppAnalyzer = () => {
     data.forEach(row => {
       if (!row.message) return;
       
+      // Clean and split the message
       const words = row.message
         .toLowerCase()
         .replace(/[^\p{L}\p{N}\s]/gu, '')
@@ -277,6 +317,9 @@ const WhatsAppAnalyzer = () => {
       
       // Generate 2-word phrases
       for (let i = 0; i < words.length - 1; i++) {
+        // Skip phrases containing excluded words
+        if (excludedWords.includes(words[i]) || excludedWords.includes(words[i + 1])) continue;
+        
         const phrase = `${words[i]} ${words[i + 1]}`;
         if (!phraseCounts[phrase]) {
           phraseCounts[phrase] = 0;
@@ -286,6 +329,9 @@ const WhatsAppAnalyzer = () => {
       
       // Generate 3-word phrases
       for (let i = 0; i < words.length - 2; i++) {
+        // Skip phrases containing excluded words
+        if (excludedWords.includes(words[i]) || excludedWords.includes(words[i + 1]) || excludedWords.includes(words[i + 2])) continue;
+        
         const phrase = `${words[i]} ${words[i + 1]} ${words[i + 2]}`;
         if (!phraseCounts[phrase]) {
           phraseCounts[phrase] = 0;
@@ -333,6 +379,10 @@ const WhatsAppAnalyzer = () => {
       mostActiveDay: {
         date: mostActiveDay[0],
         count: mostActiveDay[1]
+      },
+      mostActiveWeek: {
+        week: mostActiveWeek[0],
+        count: mostActiveWeek[1]
       }
     });
   };
@@ -468,7 +518,7 @@ const WhatsAppAnalyzer = () => {
         )}
       
         {activeTab === 'chat' && fileUploaded && (
-          <div className="chat-container">
+          <div className="chat-container white-bg">
             {/* WhatsApp-like header */}
             <div className="chat-header">
               <div className="chat-avatar">
@@ -499,7 +549,7 @@ const WhatsAppAnalyzer = () => {
             </div>
             
             {/* Chat Messages */}
-            <div className="chat-messages">
+            <div className="chat-messages white-bg">
               {Object.keys(groupedByDate).length === 0 ? (
                 <div className="no-messages">
                   <p>No messages found</p>
@@ -557,13 +607,25 @@ const WhatsAppAnalyzer = () => {
           <div className="stats-container">
             <h2 className="section-title">Chat Statistics</h2>
             
-            {/* Most Active Day */}
+            {/* Most Active Day and Week */}
             <div className="stat-card">
-              <h3 className="stat-title">Most Active Day</h3>
-              <p className="stat-highlight">
-                <span className="stat-value">{stats.mostActiveDay.date}</span> with{' '}
-                <span className="stat-value highlight">{stats.mostActiveDay.count}</span> messages
-              </p>
+              <h3 className="stat-title">Most Active Periods</h3>
+              <div className="stats-grid">
+                <div>
+                  <h4 className="subsection-title">Most Active Day</h4>
+                  <p className="stat-highlight">
+                    <span className="stat-value">{stats.mostActiveDay.date}</span> with{' '}
+                    <span className="stat-value highlight">{stats.mostActiveDay.count}</span> messages
+                  </p>
+                </div>
+                <div>
+                  <h4 className="subsection-title">Most Active Week</h4>
+                  <p className="stat-highlight">
+                    <span className="stat-value">{stats.mostActiveWeek.week}</span> with{' '}
+                    <span className="stat-value highlight">{stats.mostActiveWeek.count}</span> messages
+                  </p>
+                </div>
+              </div>
             </div>
             
             {/* Monthly Timeline Chart */}
@@ -708,6 +770,7 @@ const WhatsAppAnalyzer = () => {
             
             {/* Most Common Words */}
             <div className="stat-card">
+              <div className="stat-card">
               <h3 className="stat-title">Most Common Words</h3>
               <div className="vertical-chart-container">
                 <ResponsiveContainer width="100%" height="100%">
