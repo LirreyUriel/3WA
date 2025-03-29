@@ -19,373 +19,8 @@ const WhatsAppAnalyzer = () => {
   const chatEndRef = useRef(null);
   const fileInputRef = useRef(null);
 
-  const handleFileUpload = (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    setLoading(true);
-    setError('');
-
-    // Check if file is a CSV
-    if (file.type !== 'text/csv' && !file.name.endsWith('.csv')) {
-      setError('Please upload a CSV file.');
-      setLoading(false);
-      return;
-    }
-
-    const reader = new FileReader();
-    
-    reader.onload = (e) => {
-      const csvContent = e.target.result;
-      
-      try {
-        Papa.parse(csvContent, {
-          header: true,
-          skipEmptyLines: true,
-          encoding: 'utf8',
-          complete: (results) => {
-            // Check if the CSV has the required columns
-            const requiredColumns = ['datetime', 'date', 'time', 'hour', 'weekday', 'sender', 'message'];
-            const headers = results.meta.fields;
-            
-            const missingColumns = requiredColumns.filter(col => !headers.includes(col));
-            
-            if (missingColumns.length > 0) {
-              setError(`CSV is missing required columns: ${missingColumns.join(', ')}`);
-              setLoading(false);
-              return;
-            }
-            
-            const parsedData = results.data.map(row => ({
-              ...row,
-              datetime: new Date(parseDate(row.date, row.time))
-            })).sort((a, b) => a.datetime - b.datetime);
-            
-            setChatData(parsedData);
-            calculateStats(parsedData);
-            setFileUploaded(true);
-            setLoading(false);
-            // Switch to chat tab after successful upload
-            setActiveTab('chat');
-          },
-          error: (error) => {
-            setError(`Error parsing CSV: ${error.message}`);
-            setLoading(false);
-          }
-        });
-      } catch (error) {
-        setError(`Failed to process the file: ${error.message}`);
-        setLoading(false);
-      }
-    };
-    
-    reader.onerror = () => {
-      setError('Failed to read the file.');
-      setLoading(false);
-    };
-    
-    reader.readAsText(file);
-  };
-
-  const parseDate = (dateStr, timeStr) => {
-    if (!dateStr) return null;
-    
-    // Try to handle different date formats
-    let dateParts;
-    if (dateStr.includes('/')) {
-      dateParts = dateStr.split('/');
-    } else if (dateStr.includes('-')) {
-      dateParts = dateStr.split('-');
-    } else {
-      return new Date(); // Fallback to current date if format is unknown
-    }
-    
-    if (dateParts.length !== 3) return new Date();
-    
-    // Handle both DD/MM/YYYY and MM/DD/YYYY formats
-    // This is a simple heuristic - for a production app, more robust date parsing would be needed
-    let day, month, year;
-    
-    // Try to determine which format is used
-    if (parseInt(dateParts[0]) > 12) {
-      // Likely DD/MM/YYYY
-      day = parseInt(dateParts[0], 10);
-      month = parseInt(dateParts[1], 10) - 1; // JavaScript months are 0-indexed
-      year = parseInt(dateParts[2], 10);
-    } else {
-      // Could be MM/DD/YYYY or DD/MM/YYYY, default to DD/MM/YYYY
-      day = parseInt(dateParts[0], 10);
-      month = parseInt(dateParts[1], 10) - 1;
-      year = parseInt(dateParts[2], 10);
-      
-      // If year is too small, might be using different order
-      if (year < 100) {
-        // Probably DD/MM/YY or MM/DD/YY
-        year += 2000; // Assume 20xx for 2-digit years
-      }
-    }
-    
-    let hours = 0, minutes = 0;
-    if (timeStr) {
-      const timeParts = timeStr.split(':');
-      if (timeParts.length >= 2) {
-        hours = parseInt(timeParts[0], 10);
-        minutes = parseInt(timeParts[1], 10);
-      }
-    }
-    
-    return new Date(year, month, day, hours, minutes);
-  };
-
-  // Generate ISO week number from a date
-  const getWeekNumber = (d) => {
-    const date = new Date(d);
-    date.setHours(0, 0, 0, 0);
-    // Thursday in current week decides the year
-    date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
-    // January 4 is always in week 1
-    const week1 = new Date(date.getFullYear(), 0, 4);
-    // Adjust to Thursday in week 1 and count number of weeks from date to week1
-    return 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
-  };
-
-  // Get week identifier (year + week number)
-  const getWeekIdentifier = (date) => {
-    const d = new Date(date);
-    const year = d.getFullYear();
-    const week = getWeekNumber(d);
-    return `${year}-W${week.toString().padStart(2, '0')}`;
-  };
-
-  const calculateStats = (data) => {
-    if (!data || data.length === 0) return;
-    
-    // Get unique senders
-    const uniqueSenders = [...new Set(data.map(row => row.sender))];
-    
-    // Message count by sender
-    const messageCountBySender = {};
-    uniqueSenders.forEach(sender => {
-      messageCountBySender[sender] = data.filter(row => row.sender === sender).length;
-    });
-    
-    // Word count by sender
-    const wordCountBySender = {};
-    uniqueSenders.forEach(sender => {
-      const messages = data.filter(row => row.sender === sender).map(row => row.message);
-      const wordCount = messages.reduce((total, message) => {
-        if (!message) return total;
-        return total + message.split(/\s+/).filter(word => word.length > 0).length;
-      }, 0);
-      wordCountBySender[sender] = wordCount;
-    });
-    
-    // Message count by weekday
-    const messagesByWeekday = {
-      "Sunday": 0, "Monday": 0, "Tuesday": 0, "Wednesday": 0,
-      "Thursday": 0, "Friday": 0, "Saturday": 0
-    };
-    
-    // Count days per weekday for averages
-    const daysByWeekday = {
-      "Sunday": new Set(), "Monday": new Set(), "Tuesday": new Set(),
-      "Wednesday": new Set(), "Thursday": new Set(), "Friday": new Set(), "Saturday": new Set()
-    };
-    
-    data.forEach(row => {
-      const day = row.weekday;
-      if (messagesByWeekday.hasOwnProperty(day)) {
-        messagesByWeekday[day]++;
-        daysByWeekday[day].add(row.date);
-      }
-    });
-    
-    // Calculate average messages per weekday
-    const avgMessagesByWeekday = {};
-    Object.keys(messagesByWeekday).forEach(day => {
-      const daysCount = daysByWeekday[day].size;
-      avgMessagesByWeekday[day] = daysCount > 0 ? messagesByWeekday[day] / daysCount : 0;
-    });
-    
-    // Message count by hour
-    const messagesByHour = Array(24).fill(0);
-    data.forEach(row => {
-      const hour = parseInt(row.hour, 10);
-      if (!isNaN(hour) && hour >= 0 && hour < 24) {
-        messagesByHour[hour]++;
-      }
-    });
-    
-    // Message count by date
-    const messagesByDate = {};
-    data.forEach(row => {
-      if (!messagesByDate[row.date]) {
-        messagesByDate[row.date] = 0;
-      }
-      messagesByDate[row.date]++;
-    });
-    
-    // Message count by week
-    const messagesByWeek = {};
-    data.forEach(row => {
-      if (!row.datetime) return;
-      
-      const weekId = getWeekIdentifier(row.datetime);
-      if (!messagesByWeek[weekId]) {
-        messagesByWeek[weekId] = 0;
-      }
-      messagesByWeek[weekId]++;
-    });
-    
-    // Find most active day
-    const mostActiveDay = Object.entries(messagesByDate)
-      .reduce((max, [date, count]) => count > max[1] ? [date, count] : max, ['', 0]);
-    
-    // Find most active week
-    const mostActiveWeek = Object.entries(messagesByWeek)
-      .reduce((max, [week, count]) => count > max[1] ? [week, count] : max, ['', 0]);
-    
-    // Timeline data (by month)
-    const messagesByMonth = {};
-    data.forEach(row => {
-      if (!row.datetime) return;
-      
-      const date = row.datetime;
-      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-      
-      if (!messagesByMonth[monthKey]) {
-        messagesByMonth[monthKey] = 0;
-      }
-      messagesByMonth[monthKey]++;
-    });
-    
-    // Timeline data (by day) for bar chart
-    const dailyTimelineData = Object.entries(messagesByDate)
-      .map(([date, count]) => {
-        // Try to create a proper date object for sorting
-        const dateParts = date.split('/');
-        if (dateParts.length === 3) {
-          const day = parseInt(dateParts[0], 10);
-          const month = parseInt(dateParts[1], 10) - 1;
-          const year = parseInt(dateParts[2], 10);
-          return { date, count, sortDate: new Date(year, month, day) };
-        }
-        return { date, count, sortDate: new Date(0) }; // Fallback for invalid dates
-      })
-      .sort((a, b) => a.sortDate - b.sortDate)
-      .slice(-30); // Get only the last 30 days for readability
-    
-    // Words to exclude from analysis
-    const excludedWords = ['המדיה', 'נכללה', 'מחקת', 'ההודעה', 'נערכה'];
-    
-    // Calculate most common words
-    const wordCounts = {};
-    data.forEach(row => {
-      if (!row.message) return;
-      
-      const words = row.message
-        .toLowerCase()
-        .replace(/[^\p{L}\p{N}\s]/gu, '') // Remove non-alphanumeric characters but keep Unicode letters
-        .split(/\s+/)
-        .filter(word => word.length > 2 && !excludedWords.includes(word)); // Filter out short words and excluded words
-      
-      words.forEach(word => {
-        if (!wordCounts[word]) {
-          wordCounts[word] = 0;
-        }
-        wordCounts[word]++;
-      });
-    });
-    
-    // Get top 30 words
-    const topWords = Object.entries(wordCounts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 30)
-      .map(([word, count]) => ({ word, count }));
-    
-    // Calculate most common phrases (2-3 words)
-    const phraseCounts = {};
-    data.forEach(row => {
-      if (!row.message) return;
-      
-      // Clean and split the message
-      const words = row.message
-        .toLowerCase()
-        .replace(/[^\p{L}\p{N}\s]/gu, '')
-        .split(/\s+/)
-        .filter(word => word.length > 1);
-      
-      // Generate 2-word phrases
-      for (let i = 0; i < words.length - 1; i++) {
-        // Skip phrases containing excluded words
-        if (excludedWords.includes(words[i]) || excludedWords.includes(words[i + 1])) continue;
-        
-        const phrase = `${words[i]} ${words[i + 1]}`;
-        if (!phraseCounts[phrase]) {
-          phraseCounts[phrase] = 0;
-        }
-        phraseCounts[phrase]++;
-      }
-      
-      // Generate 3-word phrases
-      for (let i = 0; i < words.length - 2; i++) {
-        // Skip phrases containing excluded words
-        if (excludedWords.includes(words[i]) || excludedWords.includes(words[i + 1]) || excludedWords.includes(words[i + 2])) continue;
-        
-        const phrase = `${words[i]} ${words[i + 1]} ${words[i + 2]}`;
-        if (!phraseCounts[phrase]) {
-          phraseCounts[phrase] = 0;
-        }
-        phraseCounts[phrase]++;
-      }
-    });
-    
-    // Get top 30 phrases with at least 3 occurrences
-    const topPhrases = Object.entries(phraseCounts)
-      .filter(([phrase, count]) => count >= 3) // Filter out phrases that occur less than 3 times
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 30)
-      .map(([phrase, count]) => ({ phrase, count }));
-    
-    // Format data for charts
-    const timelineData = Object.entries(messagesByMonth)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([month, count]) => ({ month, count }));
-    
-    const weekdayData = Object.entries(avgMessagesByWeekday)
-      .map(([day, avg]) => ({ 
-        day, 
-        avg: parseFloat(avg.toFixed(1))
-      }));
-    
-    const hourData = messagesByHour
-      .map((count, hour) => ({ hour: `${hour}:00`, count }));
-    
-    const senderData = uniqueSenders.map(sender => ({
-      name: sender,
-      messages: messageCountBySender[sender],
-      words: wordCountBySender[sender]
-    }));
-    
-    // Set all stats
-    setStats({
-      timelineData,
-      dailyTimelineData,
-      weekdayData,
-      hourData,
-      senderData,
-      topWords,
-      topPhrases,
-      mostActiveDay: {
-        date: mostActiveDay[0],
-        count: mostActiveDay[1]
-      },
-      mostActiveWeek: {
-        week: mostActiveWeek[0],
-        count: mostActiveWeek[1]
-      }
-    });
-  };
+  // All your existing functions...
+  // handleFileUpload, parseDate, getWeekNumber, getWeekIdentifier, calculateStats, etc.
 
   // Filter chat data by search term
   const filteredChatData = searchTerm && chatData.length > 0
@@ -471,6 +106,7 @@ const WhatsAppAnalyzer = () => {
       </div>
       
       <div className="content">
+        {/* UPLOAD TAB */}
         {activeTab === 'upload' && (
           <div className="upload-container">
             <div 
@@ -517,6 +153,7 @@ const WhatsAppAnalyzer = () => {
           </div>
         )}
       
+        {/* CHAT TAB */}
         {activeTab === 'chat' && fileUploaded && (
           <div className="chat-container white-bg">
             {/* WhatsApp-like header */}
@@ -603,6 +240,7 @@ const WhatsAppAnalyzer = () => {
           </div>
         )}
         
+        {/* STATISTICS TAB */}
         {activeTab === 'statistics' && fileUploaded && stats && (
           <div className="stats-container">
             <h2 className="section-title">Chat Statistics</h2>
@@ -819,7 +457,10 @@ const WhatsAppAnalyzer = () => {
                 </ResponsiveContainer>
               </div>
             </div>
+          </div>
+        )}
         
+        {/* NO DATA MESSAGE */}
         {!fileUploaded && (activeTab === 'chat' || activeTab === 'statistics') && (
           <div className="no-data">
             <div className="warning-icon">⚠️</div>
